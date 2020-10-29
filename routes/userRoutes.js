@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const _ = require('lodash');
 const { check, validationResult } = require('express-validator/check');
 const User = require('../models/userModel');
 const mailgun = require("mailgun-js");
@@ -27,7 +28,7 @@ router.post(
 	async (req, res) => {
 		const errors = validationResult(req);
 		if (!errors.isEmpty()) {
-			return res.status(400).json({ errors: errors.array() });
+			return res.status(400).json({ message: errors.array() });
 		}
 
 		const { name, email, password } = req.body;
@@ -36,7 +37,7 @@ router.post(
 			let user = await User.findOne({ email });
 
 			if (user) {
-				return res.status(400).json({ msg: 'User already exists' });
+				return res.status(400).json({ message: 'User already exists' });
 			}
 
 			const token = jwt.sign(
@@ -46,11 +47,11 @@ router.post(
 			);
 
 			const data = {
-				from: "Mailgun Sandbox <postmaster@sandbox0a8f096a3dea4e19b048c53e157da52f.mailgun.org>",
-				to: "dhanushkumarsivaji@gmail.com",
-				subject: "Account Activation Link :",
+				from: "no-reply@dhanush.com",
+				to: email,
+				subject: "Email verification token",
 				text: `
-					<h1>Please click the below link to activate the account</h1>
+					<h3>Please get the below token to activate your account</h3>
 					<p>${token}</p>
 				`
 			};
@@ -60,15 +61,13 @@ router.post(
 						message: error.message
 					})
 				}
-				console.log("sucess", body);
 				res.status(200).json({
 					message:"Verification mail has sent successfully"
 				})
 			});
 
 		} catch (err) {
-			console.error(err.message);
-			res.status(500).send('Server error');
+			res.status(500).json({message:"Server error"});
 		}
 	}
 );
@@ -79,12 +78,12 @@ router.post(
 // @access   Public
 router.post(
 	'/email-verification',
-	 (req, res) => {
+	  (req, res) => {
 
 		const { token } = req.body;
 
 			if (token) {
-				jwt.verify(token, process.env.JWT_SECRET, async function (error, decodedToken) {
+				jwt.verify(token, process.env.JWT_SECRET, async function(error, decodedToken) {
 					if (error) {
 						res.status(400).json({ message: "Incorrect or expired link" })
 					}
@@ -93,7 +92,7 @@ router.post(
 					let user = await User.findOne({ email });
 
 					if (user) {
-						return res.status(400).json({ msg: 'User already exists' });
+						return res.status(400).json({ message: 'User already exists' });
 					}
 
 					user = new User({
@@ -108,8 +107,7 @@ router.post(
 
 					await user.save((err,success)=>{
 						if(err){
-							console.log("Error in savin user : ",err);
-							return res.status(400).json({error:err})
+							return res.status(400).json({message:err})
 						}
 						res.json({
 							message:"signup success"
@@ -119,10 +117,107 @@ router.post(
 
 			}
 			else{
-				console.error(err.message);
-				res.status(500).send('Server error');
+				res.status(500).json({message:"Server error"});
 			}
 			
+		
+	}
+);
+
+
+// @route    POST api/users/forgot-password
+// @desc     forgot password
+// @access   Public
+router.post(
+	'/forgot-password',
+	 async (req, res) => {
+
+		const { email } = req.body;
+
+		try {
+			let user = await User.findOne({ email });
+
+			if (!user) {
+				return res.status(400).json({ message: 'User with this email address doesnt exists' });
+			}
+
+			const token = jwt.sign({_id:user._id},process.env.FORGOT_PASSWORD_SECRET,{ expiresIn: 360000 })
+			const data = {
+				from: "no-reply@dhanush.com",
+				to: email,
+				subject: "Password reset token",
+				text: `
+					<h3>Please get the below token to reset the password</h3>
+					<p>${token}</p>
+				`
+			};
+
+			return user.updateOne({resetLink: token},(err,sucess)=>{
+				if(err){
+					return res.status(400).json({message:"reset password link error"})
+				}else{
+					mg.messages().send(data, function (error, body) {
+						if (error) {
+							return res.json({
+								message: error.message
+							})
+						}
+						res.status(200).json({
+							message:"Verification mail has sent, kindly follow the instruction to reset the password"
+						})
+					});
+				}
+			})
+			
+
+		} catch (err) {
+			res.status(500).send('Server error');
+		}
+		
+	}
+);
+
+
+// @route    POST api/users/reset-password
+// @desc     reset password
+// @access   Public
+router.post(
+	'/reset-password',
+	 (req, res) => {
+
+		const { resetLink , password} = req.body;
+
+		try {
+			jwt.verify(resetLink, process.env.FORGOT_PASSWORD_SECRET, (err,decodedData)=>{
+				if(err){
+					return res.status(401).json({
+						message: "Incorrect token or its expired ."
+					})
+				}
+				User.findOne({resetLink},(err,user)=>{
+					if(err || !user){
+						return res.status(400).json({message:"User with this token does not exist"})
+					}
+					const obj = {
+						password:password,
+						resetLink: ''
+					}
+
+					user = _.extend(user, obj);
+
+					user.save((err,result) => {
+						if(err){
+							return res.status(400).json({message:"Reset password error"})
+						}else{
+							return res.status(200).json({message:"Your password has been changed"})
+						}
+					})
+				})
+			})
+
+		} catch (err) {
+			res.status(500).send('Server error');
+		}
 		
 	}
 );

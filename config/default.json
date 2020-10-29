@@ -1,5 +1,5 @@
 {
-	"mongoURI": "mongodb+srv://dhanush:S*dk1995@email-verification.jcj3n.mongodb.net/<dbname>?retryWrites=true&w=majority",
+	"mongoURI": "mongodb+srv://dhanush:S*dk1995@email-verification.jcj3n.mongodb.net/<dbname>?retryWrites=true&w=majority/account-activation",
     "jwtSecret": "secret",
     "PORT": 5000
 }
